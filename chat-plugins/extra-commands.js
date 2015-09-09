@@ -7,6 +7,7 @@ var http = require('http');
 var urbanCache = {};
 var monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 var regdateCache = {};
+var serverIp = "158.69.194.104";
 
 try {
 	regdateCache = JSON.parse(fs.readFileSync('config/regdatecache.json', 'utf8'));
@@ -73,7 +74,7 @@ exports.commands = {
 			var data = '';
 
 			res.on('data', function (chunk) {
-				console.log('BODY: ' + chunk);
+				//console.log('BODY: ' + chunk);
 				data += chunk;
 			});
 
@@ -173,7 +174,7 @@ exports.commands = {
 
 			res.on('end', function () {
 		        var json = JSON.parse(data);
-		        console.log('json: ' + JSON.stringify(json));
+		        //console.log('json: ' + JSON.stringify(json));
 		        if (json.registertime === 0) {
 		        	self.sendReplyBox(Tools.escapeHTML(target) + " is not registered.");
 		      		return room.update();
@@ -189,5 +190,123 @@ exports.commands = {
 		    });
 		});
 		req.end();
-	}
+	},
+
+	profile: function(target, room, user) {
+		if (!target) target = user.name;
+		if (toId(target).length > 19) return this.sendReply("Usernames may not be more than 19 characters long.");
+		if (toId(target).length < 1) return this.sendReply(target + " is not a valid username.");
+		if (!this.canBroadcast()) return;
+		var targetUser = Users.get(target);
+		if (!targetUser) {
+			var username = target;
+			var userid = toId(target);
+			var avatar = (Config.customavatars[userid] ? "http://" + serverIp + ":" + Config.port + "/avatars/" + Config.customavatars[userid] : "http://play.pokemonshowdown.com/sprites/trainers/167.png");
+			var online = false
+		} else {
+			var username = targetUser.name;
+			var userid = targetUser.userid;
+			var avatar = (isNaN(targetUser.avatar) ? "http://" + serverIp + ":" + Config.port + "/avatars/" + targetUser.avatar : "http://play.pokemonshowdown.com/sprites/trainers/" + targetUser.avatar + ".png");
+			var online = true;
+		}
+
+    	if (Users.usergroups[userid]) {
+			var userGroup = Users.usergroups[userid].substr(0,1);
+			for (var u in Config.grouplist) {
+				if (Config.grouplist[u].symbol && Config.grouplist[u].symbol === userGroup) userGroup = Config.grouplist[u].name;
+			}
+		} else {
+			var userGroup = 'Regular User';
+		}
+
+		var self = this;
+
+		if (regdateCache[toId(target)]) {
+			regdate = regdateCache[toId(target)];
+			showProfile();
+		} else {
+			var options = {
+				host: 'pokemonshowdown.com',
+				port: 80,
+				path: '/users/' + encodeURIComponent(target) + '.json'
+			};
+
+			var content = "";
+			var req = http.get(options, function(res) {
+				res.setEncoding('utf8');
+
+				var data = '';
+
+				res.on('data', function (chunk) {
+					//console.log('BODY: ' + chunk);
+					data += chunk;
+				});
+
+				res.on('end', function () {
+			        var json = JSON.parse(data);
+			        //console.log('json: ' + JSON.stringify(json));
+			        if (json.registertime === 0) {
+			        	regdate = "Unregistered";
+			        	return showProfile();
+			        }
+
+			        var date = json.registertime.toString();
+			        while (date.length < 13) date += "0";
+			        date = new Date(Number(date));
+
+			        regdate = monthNames[date.getMonth()] + " " + date.getDate() + ", " + date.getFullYear();
+			        cacheRegdate(toId(target), monthNames[date.getMonth()] + " " + date.getDate() + ", " + date.getFullYear());
+			        showProfile();
+			        return room.update();
+			    });
+			});
+			req.end();
+		}
+
+			function showProfile() {
+				readMoney(userid, function(bucks) {
+					lastSeen(toId(target), function (lastOnline) {
+						if (!lastOnline) {
+							lastOnlineDate = "Never";
+						} else {
+							lastOnlineDate = new Date(lastOnline).toUTCString();
+							var seconds = Math.floor(((Date.now() - lastOnline) / 1000));
+							var minutes = Math.floor((seconds / 60));
+							var hours = Math.floor((minutes / 60));
+							var days = Math.floor((hours / 24));
+
+							var secondsWord = (((seconds % 60) > 1 || (seconds % 60) == 0) ? 'seconds' : 'second');
+							var minutesWord = (((minutes % 60) > 1 || (minutes % 60) == 0) ? 'minutes' : 'minute');
+							var hoursWord = ((hours > 1 || hours == 0) ? 'hours' : 'hour');
+							var daysWord = ((days === 1) ? 'day' : 'days');
+
+							if (minutes < 1) {
+								lastOnlineDate += " (" + seconds + " " + secondsWord + " ago)";
+							}
+							if (minutes > 0 && minutes < 60) {
+								lastOnlineDate += " (" + minutes + " " + minutesWord + " ago)";
+							}
+							if (hours > 0 && days < 1) {
+								lastOnlineDate += " (" + hours + " " + hoursWord + " " + (minutes % 60) + " " + minutesWord + " ago)";
+							}
+							if (days > 0) {
+								lastOnlineDate += " (" + days + " " + daysWord + " ago)";
+							}
+						}
+						var profile = '';
+						profile += '<img src="' + avatar + '" height=80 width=80 align=left>';
+						profile += '&nbsp;<font color=#24678d><b>Name: </font><b><font color="' + hashColor(toId(username)) + '">' + Tools.escapeHTML(username) + '</font></b><br />';
+						profile += '&nbsp;<font color=#24678d><b>Registered: </font></b>' + regdate + '<br />';
+						//if (!Users.vips[userid]) profile += '&nbsp;<font color=#24678d><b>Rank: </font></b>' + userGroup + '<br />';
+						//if (Users.vips[userid]) profile += '&nbsp;<font color=#24568d><b>Rank: </font></b>' + userGroup + ' (<font color=#6390F0><b>VIP User</b></font>)<br />';
+						if (bucks) profile += '&nbsp;<font color=#24678d><b>Bucks: </font></b>' + bucks + '<br />';
+						if (online) profile += '&nbsp;<font color=#24678d><b>Last Online: </font></b><font color=green>Currently Online</font><br />';
+						if (!online) profile += '&nbsp;<font color=#24678d><b>Last Online: </font></b>' + lastOnlineDate + '<br />';
+						profile += '<br clear="all">';
+						self.sendReplyBox(profile);
+						room.update();
+					});
+				});
+			}
+	},
 }
