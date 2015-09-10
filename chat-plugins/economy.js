@@ -538,18 +538,13 @@ exports.commands = {
 			if (this.locked) {
 				return '‽'+this.name;
 			}
-			if (this.mutedRooms[roomid]) {
-				return '!'+this.name;
-			}
-			var room = Rooms.rooms[roomid];
-			if (!room) return target + this.name;
-			if (room.auth) {
-				if (room.auth[this.userid]) {
-					return room.auth[this.userid] + this.name;
+			if (roomid) {
+				var room = Rooms.rooms[roomid];
+				if (room.isMuted(this)) {
+					return '!' + this.name;
 				}
-				if (room.isPrivate) return ' ' + this.name;
 			}
-			return target + this.name;
+		return target + this.name;
 		}
 	 	user.updateIdentity();
 	 	user.canCustomSymbol = false;
